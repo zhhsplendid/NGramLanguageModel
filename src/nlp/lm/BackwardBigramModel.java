@@ -15,13 +15,12 @@ import java.util.Map;
 
 public class BackwardBigramModel extends BigramModel {
 	
-	/**  Backward Bigram model that maps a backword bigram as a string "A\nB" to the
+	/**  Backward Bigram model that maps a backword bigram "A B" as a string "B\nA" to the
      *   P(A | B) 
      *   public Map<String, DoubleValue> bigramMap;
 	 */
-	
 	/** Accumulate unigram and backward bigram counts for this sentence */
-	/*
+	
 	@Override
 	public void trainSentence (List<String> sentence) {
 		// First count an initial start sentence token
@@ -70,48 +69,65 @@ public class BackwardBigramModel extends BigramModel {
     		bigramMap.put(bigram, bigramValue);
     	}
     	bigramValue.increment();
-	}*/
+	}
 	
 	
-	/** Compute unigram and bigram probabilities from unigram and bigram counts */
-	@Override
-    public void calculateProbs() {
-    	// Set bigram values to conditional probability of second token given first
-    	for (Map.Entry<String, DoubleValue> entry : bigramMap.entrySet()) {
-    		// An entry in the HashMap maps a token to a DoubleValue
-    		String bigram = entry.getKey();
-    		// The value for the token is in the value of the DoubleValue
-    		DoubleValue value = entry.getValue();
-    		double bigramCount = value.getValue();
-    		String token2 = bigramToken2(bigram); // Get second token of bigram
-    		// Prob is ratio of bigram count to token2 unigram count
-    		double condProb = bigramCount / unigramMap.get(token2).getValue();
-    		// Set map value to conditional probability 
-    		value.setValue(condProb);
+	/* Compute log probability of sentence given current model */
+    public double sentenceLogProb (List<String> sentence) {
+    	// Set start-sentence as initial token
+    	String lastToken = "</S>";
+    	// Maintain total sentence prob as sum of individual token
+    	// log probs (since adding logs is same as multiplying probs)
+    	double sentenceLogProb = 0;
+    	// Check prediction of each token in sentence
+    	for (int i = sentence.size() - 1; i >= 0;--i) {
+    		String token = sentence.get(i);
+    		// Retrieve unigram prob
+    		DoubleValue unigramVal = unigramMap.get(token);
+    		if (unigramVal == null) {
+    			// If token not in unigram model, treat as <UNK> token
+    			token = "<UNK>";
+    			unigramVal = unigramMap.get(token);
+    		}
+    		// Get bigram prob
+    		String bigram = bigram(lastToken, token);
+    		DoubleValue bigramVal = bigramMap.get(bigram);
+    		// Compute log prob of token using interpolated prob of unigram and bigram
+    		double logProb = Math.log(interpolatedProb(unigramVal, bigramVal));
+    		// Add token log prob to sentence log prob
+    		sentenceLogProb += logProb;
+    		// update previous token and move to next token
+    		lastToken = token;
     	}
-    	// Store unigrams with zero count to remove from map
-    	List<String> zeroTokens = new ArrayList<String>();
-    	// Set unigram values to unigram probability
-    	for (Map.Entry<String, DoubleValue> entry : unigramMap.entrySet()) {
-    		// An entry in the HashMap maps a token to a DoubleValue
-    		String token = entry.getKey();
-    		// Uniggram count is the current map value
-    		DoubleValue value = entry.getValue();
-    		double count = value.getValue();
-    		if (count == 0) 
-    			// If count is zero (due to first encounter as <UNK>)
-    			// then remove save it to remove from map
-    			zeroTokens.add(token);
-    		else
-    			// Set map value to prob of unigram
-    			value.setValue(count / tokenCount);
-    	}
-    	// Remove zero count unigrams from map
-    	for (String token : zeroTokens) 
-    		unigramMap.remove(token);
+    	// Check prediction of end of sentence token
+    	DoubleValue unigramVal = unigramMap.get("<S>");
+    	String bigram = bigram(lastToken, "<S>");
+    	DoubleValue bigramVal = bigramMap.get(bigram);
+    	double logProb = Math.log(interpolatedProb(unigramVal, bigramVal));
+    	// Update sentence log prob based on prediction of </S>
+    	sentenceLogProb += logProb;
+    	return sentenceLogProb;
     }
-	
-	
+    
+    /** Like sentenceLogProb but excludes predicting end-of-sentence when computing prob */
+    public double sentenceLogProb2 (List<String> sentence) {
+    	String lastToken = "</S>";
+    	double sentenceLogProb = 0;
+    	for (int i = sentence.size() - 1; i >= 0; --i) {
+    		String token = sentence.get(i);
+    		DoubleValue unigramVal = unigramMap.get(token);
+    		if (unigramVal == null) {
+    			token = "<UNK>";
+    			unigramVal = unigramMap.get(token);
+    		}
+    		String bigram = bigram(lastToken, token);
+    		DoubleValue bigramVal = bigramMap.get(bigram);
+    		double logProb = Math.log(interpolatedProb(unigramVal, bigramVal));
+    		sentenceLogProb += logProb;
+    		lastToken = token;
+    	}
+    	return sentenceLogProb;
+    }
 	
   
 	/** Train and test a bigram model.
@@ -123,7 +139,6 @@ public class BackwardBigramModel extends BigramModel {
      *  Uses the last fraction of the data for testing and the first part
      *  for training.
      *  
-     *  The same as BigramModel.java
      */
     public static void main(String[] args) throws IOException {
     	// All but last arg is a file/directory of LDC tagged input data
@@ -134,6 +149,7 @@ public class BackwardBigramModel extends BigramModel {
     	double testFraction = Double.valueOf(args[args.length -1]);
     	// Get list of sentences from the LDC POS tagged input files
     	List<List<String>> sentences = 	POSTaggedFile.convertToTokenLists(files);
+
     	int numSentences = sentences.size();
     	// Compute number of test sentences based on TestFrac
     	int numTest = (int)Math.round(numSentences * testFraction);
@@ -146,7 +162,7 @@ public class BackwardBigramModel extends BigramModel {
 		   ") \n# Test Sentences = " + testSentences.size() +
 		   " (# words = " + wordCount(testSentences) + ")");
 		// Create a bigram model and train it.
-		BigramModel model = new BigramModel();
+		BackwardBigramModel model = new BackwardBigramModel();
 		System.out.println("Training...");
 		model.train(trainSentences);
 		// Test on training data using test and test2
@@ -156,5 +172,6 @@ public class BackwardBigramModel extends BigramModel {
 		// Test on test data using test and test2
 		model.test(testSentences);
 		model.test2(testSentences);
+		
     }
 }
