@@ -140,11 +140,11 @@ public class BidirectionalBigramModel extends BackwardBigramModel{
 		System.out.println("Training...");
 		model.train(trainSentences);
 		// Test on training data using test and test2
-		model.test(trainSentences);
+		//model.test(trainSentences);
 		model.test2(trainSentences);
 		System.out.println("Testing...");
 		// Test on test data using test and test2
-		model.test(testSentences);
+		//model.test(testSentences);
 		model.test2(testSentences);
 		
     }
